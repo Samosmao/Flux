@@ -1,0 +1,53 @@
+# macOS / Xcode user and build state
+.DS_Store
+DerivedData/
+build/
+.build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+
+# VM disks, installers, and mutable firmware/runtime state
+*.qcow2
+*.raw
+*.img
+*.iso
+*.vhd
+*.vhdx
+*.vmdk
+*.vars.fd
+*-vars.fd
+Flux/Firmware/*.fd
+Flux/Firmware/*.fd.orig
+Flux/Firmware/*.dtb
+
+# Runtime diagnostics, temporary probe data, and saved recovery artifacts
+artifacts/
+Backups/
+*.bak
+*.bak_*
+*.before-*
+*.log
+*.tmp
+*.temp
+WORK_PROGRESS.md.bak
+
+# Generated Windows driver build/package outputs (source and INF remain tracked)
+Guest/Windows/FluxIdd/**/Debug/
+Guest/Windows/FluxIdd/**/Release/
+Guest/Windows/FluxIdd/**/*.dll
+Guest/Windows/FluxIdd/**/*.pdb
+Guest/Windows/FluxIdd/**/*.cat
+Guest/Windows/FluxIdd/**/*.sys
+Guest/Windows/FluxIdd/**/*.obj
+Guest/Windows/FluxIdd/**/*.tlog/
+
+# Secrets, certificates, and signing material
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.crt

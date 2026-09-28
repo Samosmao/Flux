@@ -1,0 +1,98 @@
+name: Build Flux IddCx ARM64 driver
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Guest/Windows/FluxIdd/**'
+      - '.github/workflows/build-flux-idd.yml'
+  pull_request:
+    paths:
+      - 'Guest/Windows/FluxIdd/**'
+      - '.github/workflows/build-flux-idd.yml'
+
+jobs:
+  build-arm64:
+    name: Build ARM64 UMDF IddCx package
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Audit Visual Studio, SDK, WDK, and IddCx inputs
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host '=== Windows ==='
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, OsArchitecture | Format-List
+          Write-Host '=== Visual Studio instances ==='
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe was not found: $vswhere" }
+          & $vswhere -all -products * -format json
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild -or -not (Test-Path $msbuild)) { throw 'Visual Studio MSBuild was not found.' }
+          "MSBUILD=$msbuild" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $msbuild -version
+          Write-Host '=== Windows SDK directories ==='
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory | Select-Object FullName
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Lib" -Directory | Select-Object FullName
+          Write-Host '=== WDK directories ==='
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10" -Force | Select-Object Name, FullName
+          $iddcxHeader = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10" -Recurse -Filter iddcx.h -ErrorAction SilentlyContinue | Select-Object -First 1
+          $iddcxLib = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10" -Recurse -Filter IddCxStub.lib -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\arm64\\' } | Select-Object -First 1
+          if (-not $iddcxHeader) { throw 'iddcx.h was not found in the installed SDK/WDK.' }
+          if (-not $iddcxLib) { throw 'ARM64 IddCxStub.lib was not found in the installed SDK/WDK.' }
+          "IDDCX_HEADER=$($iddcxHeader.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "IDDCX_LIB=$($iddcxLib.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "iddcx.h: $($iddcxHeader.FullName)"
+          Write-Host "IddCxStub.lib: $($iddcxLib.FullName)"
+          $arm64Compiler = Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" -Recurse -Filter cl.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\Hostx64\\arm64\\cl.exe$' } | Select-Object -First 1
+          if (-not $arm64Compiler) { throw 'MSVC Hostx64/arm64 compiler was not found.' }
+          Write-Host "ARM64 compiler: $($arm64Compiler.FullName)"
+
+      - name: Build Debug ARM64 driver and preserve full log
+        run: |
+          $ErrorActionPreference = 'Continue'
+          New-Item -ItemType Directory -Force -Path .artifacts\FluxIdd | Out-Null
+          & $env:MSBUILD Guest\Windows\FluxIdd\FluxIdd.sln /m /p:Configuration=Debug /p:Platform=ARM64 2>&1 |
+            Tee-Object -FilePath .artifacts\FluxIdd\msbuild.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate ARM64 result and INF
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $driverRoot = 'Guest\Windows\FluxIdd'
+          $dll = Get-ChildItem $driverRoot -Recurse -Filter FluxIdd.dll | Select-Object -First 1
+          if (-not $dll) { throw 'FluxIdd.dll was not produced by the ARM64 build.' }
+          $dumpbin = Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\Hostx64\\x64\\dumpbin.exe$' } | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe was not found for binary architecture validation.' }
+          & $dumpbin.FullName /headers $dll.FullName 2>&1 | Tee-Object -FilePath .artifacts\FluxIdd\dumpbin-headers.log
+          if (-not ((Get-Content .artifacts\FluxIdd\dumpbin-headers.log -Raw) -match 'ARM64')) { throw 'FluxIdd.dll is not ARM64.' }
+          $infVerif = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10" -Recurse -Filter InfVerif.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $infVerif) { throw 'InfVerif.exe was not found in the installed WDK.' }
+          & $infVerif.FullName /v "$driverRoot\FluxIdd.inf" 2>&1 | Tee-Object -FilePath .artifacts\FluxIdd\infverif.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ((Get-Content "$driverRoot\FluxIdd.inf" -Raw) -match 'ROOT\\FLUX_IDD')) { throw 'ROOT\\FLUX_IDD binding was not preserved.' }
+
+      - name: Collect driver package outputs
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path .artifacts\FluxIdd\package | Out-Null
+          Get-ChildItem Guest\Windows\FluxIdd -Recurse -Include FluxIdd.dll,FluxIdd.inf,FluxIdd.cat,FluxIdd.pdb -ErrorAction SilentlyContinue |
+            Copy-Item -Destination .artifacts\FluxIdd\package -Force
+
+      - name: Upload ARM64 Debug driver artifacts and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FluxIdd-ARM64-Debug
+          if-no-files-found: warn
+          path: |
+            .artifacts/FluxIdd/**

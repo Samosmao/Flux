@@ -1,0 +1,146 @@
+/dts-v1/;
+
+/ {
+    #address-cells = <2>;
+    #size-cells = <2>;
+
+    compatible = "linux,dummy-virt";
+    interrupt-parent = <&gic>;
+
+    chosen {
+        stdout-path = "/pl011@9000000";
+    };
+
+    cpus {
+        #address-cells = <2>;
+        #size-cells = <0>;
+
+        cpu@0 {
+            device_type = "cpu";
+            compatible = "arm,arm-v8";
+            reg = <0x0 0x0>;
+            enable-method = "psci";
+        };
+
+        cpu@1 {
+            device_type = "cpu";
+            compatible = "arm,arm-v8";
+            reg = <0x0 0x1>;
+            enable-method = "psci";
+        };
+
+        cpu@2 {
+            device_type = "cpu";
+            compatible = "arm,arm-v8";
+            reg = <0x0 0x2>;
+            enable-method = "psci";
+        };
+
+        cpu@3 {
+            device_type = "cpu";
+            compatible = "arm,arm-v8";
+            reg = <0x0 0x3>;
+            enable-method = "psci";
+        };
+    };
+
+    memory@40000000 {
+        device_type = "memory";
+        reg = <0x0 0x40000000 0x1 0x00000000>;
+    };
+
+    gic: interrupt-controller@8000000 {
+        compatible = "arm,gic-v3";
+        #interrupt-cells = <3>;
+        #address-cells = <0>;
+        interrupt-controller;
+        reg =
+            <0x0 0x08000000 0x0 0x00010000>,
+            <0x0 0x080a0000 0x0 0x02000000>;
+    };
+
+    timer {
+        compatible = "arm,armv8-timer";
+        always-on;
+
+        interrupts =
+            <1 13 0xf08>,
+            <1 14 0xf08>,
+            <1 11 0xf08>,
+            <1 10 0xf08>;
+    };
+
+    pl011@9000000 {
+        compatible = "arm,pl011", "arm,primecell";
+        reg = <0x0 0x09000000 0x0 0x00001000>;
+        interrupts = <0 1 4>;
+        clock-frequency = <24000000>;
+        current-speed = <115200>;
+        status = "okay";
+    };
+
+    psci {
+        compatible = "arm,psci-1.0", "arm,psci-0.2";
+        method = "hvc";
+    };
+
+    flash@0 {
+        compatible = "cfi-flash";
+
+        reg =
+            <0x0 0x00000000 0x0 0x04000000>,
+            <0x0 0x04000000 0x0 0x04000000>;
+
+        bank-width = <4>;
+    };
+
+    rtc@9010000 {
+        compatible = "arm,pl031", "arm,primecell";
+
+        reg =
+            <0x0 0x09010000 0x0 0x1000>;
+
+        interrupts = <0 2 4>;
+
+        clock-frequency = <32768>;
+
+        status = "okay";
+    };
+
+    fw-cfg@9020000 {
+        compatible = "qemu,fw-cfg-mmio";
+
+        reg =
+            <0x0 0x09020000 0x0 0x18>;
+
+        dma-coherent;
+    };
+
+
+    virtio_mmio@a000000 {
+        compatible = "virtio,mmio";
+        reg = <0x0 0x0a000000 0x0 0x200>;
+        interrupts = <0 16 4>;
+    };
+
+    virtio_mmio@a000200 {
+        compatible = "virtio,mmio";
+        reg = <0x0 0x0a000200 0x0 0x200>;
+        interrupts = <0 17 4>;
+    };
+
+    pcie@3f000000 {
+        compatible = "pci-host-ecam-generic";
+        device_type = "pci";
+        #address-cells = <3>;
+        #size-cells = <2>;
+        bus-range = <0x0 0xf>;
+        reg = <0x0 0x3f000000 0x0 0x01000000>;
+        ranges = <0x01000000 0x0 0x00000000 0x0 0x3eff0000 0x0 0x00010000
+                  0x02000000 0x0 0x10000000 0x0 0x10000000 0x0 0x2ef00000>;
+        dma-coherent;
+        #interrupt-cells = <1>;
+        interrupt-map-mask = <0xf800 0x0 0x0 0x7>;
+        interrupt-map = <0x0800 0x0 0x0 0x1 &gic 0x0 18 0x4>;
+    };
+};
